@@ -3,6 +3,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const loginRequired = document.getElementById("login-required");
+  const loginButton = document.getElementById("login-button");
+  const teacherStatus = document.getElementById("teacher-status");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const closeLoginButton = document.getElementById("close-login");
+  const loginMessage = document.getElementById("login-message");
+  let teacherCredentials = null;
+
+  function getAuthHeaders() {
+    if (!teacherCredentials) {
+      return {};
+    }
+
+    return {
+      Authorization: `Basic ${btoa(
+        `${teacherCredentials.username}:${teacherCredentials.password}`
+      )}`,
+    };
+  }
+
+  function updateTeacherView() {
+    const isTeacher = Boolean(teacherCredentials);
+    signupForm.classList.toggle("hidden", !isTeacher);
+    loginRequired.classList.toggle("hidden", isTeacher);
+    teacherStatus.textContent = isTeacher
+      ? `Signed in as ${teacherCredentials.username}`
+      : "Student view";
+    loginButton.textContent = isTeacher ? "Log out" : "Teacher login";
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -12,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -30,7 +61,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${
+                        teacherCredentials
+                          ? `<button class="delete-btn" data-activity="${name}" data-email="${email}" aria-label="Remove ${email}">x</button>`
+                          : ""
+                      }</li>`
                   )
                   .join("")}
               </ul>
@@ -60,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".delete-btn").forEach((button) => {
         button.addEventListener("click", handleUnregister);
       });
+      updateTeacherView();
     } catch (error) {
       activitiesList.innerHTML =
         "<p>Failed to load activities. Please try again later.</p>";
@@ -80,6 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: getAuthHeaders(),
         }
       );
 
@@ -124,6 +161,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: getAuthHeaders(),
         }
       );
 
@@ -155,6 +193,51 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  loginButton.addEventListener("click", () => {
+    if (teacherCredentials) {
+      teacherCredentials = null;
+      updateTeacherView();
+      fetchActivities();
+      return;
+    }
+
+    loginModal.classList.remove("hidden");
+    document.getElementById("teacher-username").focus();
+  });
+
+  closeLoginButton.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginMessage.classList.add("hidden");
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("teacher-username").value;
+    const password = document.getElementById("teacher-password").value;
+    const encodedCredentials = btoa(`${username}:${password}`);
+
+    try {
+      const response = await fetch("/teacher/me", {
+        headers: { Authorization: `Basic ${encodedCredentials}` },
+      });
+
+      if (!response.ok) {
+        throw new Error("Invalid teacher username or password");
+      }
+
+      teacherCredentials = { username, password };
+      loginModal.classList.add("hidden");
+      loginForm.reset();
+      loginMessage.classList.add("hidden");
+      updateTeacherView();
+      fetchActivities();
+    } catch (error) {
+      loginMessage.textContent = error.message;
+      loginMessage.className = "error";
+    }
+  });
+
   // Initialize app
+  updateTeacherView();
   fetchActivities();
 });
